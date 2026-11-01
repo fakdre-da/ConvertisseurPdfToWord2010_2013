@@ -1,0 +1,44 @@
+name: Construire ConvertisseurWord.exe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer Tesseract et les langues fra, eng, ara
+        shell: pwsh
+        run: |
+          choco install tesseract -y --no-progress
+          New-Item -ItemType Directory -Path tesseract | Out-Null
+          Copy-Item "C:\Program Files\Tesseract-OCR\*" tesseract -Recurse
+          foreach ($l in "fra","ara","eng") {
+            Invoke-WebRequest "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$l.traineddata" -OutFile "tesseract\tessdata\$l.traineddata"
+          }
+          Get-ChildItem tesseract\tessdata\*.traineddata | Where-Object { $_.BaseName -notin "fra","ara","eng","osd" } | Remove-Item
+
+      - name: Installer les dépendances Python
+        run: pip install pyinstaller pdf2docx pymupdf python-docx pytesseract pillow numpy opencv-python-headless
+
+      - name: Construire l'exécutable
+        run: >
+          pyinstaller --noconfirm --clean --onefile --windowed
+          --name ConvertisseurWord
+          --add-data "tesseract;tesseract"
+          --collect-all pdf2docx --collect-data docx --hidden-import fitz
+          convertisseur_word.py
+
+      - name: Publier l'exécutable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConvertisseurWord
+          path: dist/ConvertisseurWord.exe
